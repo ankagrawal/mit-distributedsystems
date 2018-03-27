@@ -2,6 +2,11 @@ package mapreduce
 
 import (
 	"hash/fnv"
+	"io/ioutil"
+	"fmt"
+	"encoding/json"
+	"os"
+	"bytes"
 )
 
 func doMap(
@@ -11,6 +16,47 @@ func doMap(
 	nReduce int, // the number of reduce task that will be run ("R" in the paper)
 	mapF func(filename string, contents string) []KeyValue,
 ) {
+	data, err := ioutil.ReadFile(inFile)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("-------------------------------------------------------------------")
+	fmt.Println(data[0])
+	fmt.Println("-------------------------------------------------------------------")
+	var keyvalues []KeyValue
+	keyvalues = mapF("", string(data))
+	fmt.Println(len(keyvalues))
+	for i := 0; i < len(keyvalues); i++ {
+		if i < 2 {
+		    fmt.Println("key: ", keyvalues[i].Key, "value: ", keyvalues[i].Value)
+		}
+	}
+	intermediateFiles := make([]string, nReduce)
+	encoders := make([]*json.Encoder, nReduce)
+	buffers := make([]bytes.Buffer, nReduce)
+	for i := 0; i < nReduce; i++ {
+		intermediateFiles[i] = reduceName(jobName, mapTask, i)
+		encoders[i] = json.NewEncoder(&buffers[i])
+	}
+	for i := 0; i < len(keyvalues); i++ {
+		idx := ihash(keyvalues[i].Key)%nReduce
+		encoders[idx].Encode(keyvalues[i])
+	}
+	for i := 0; i < nReduce; i++ {
+		f,_ := os.Create(intermediateFiles[i])
+		f.Write(buffers[i].Bytes())
+		f.Close()
+	}
+	/*
+	fmt.Println("interm: ", interm)
+	f,_ := os.Create(interm)
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.Encode(keyvalues)
+	f.Write(buf.Bytes())
+	f.Close()
+	*/
+	//ioutil.WriteFile(interm, enc.Encode(keyvalues), 0644)
 	//
 	// doMap manages one map task: it should read one of the input files
 	// (inFile), call the user-defined map function (mapF) for that file's
